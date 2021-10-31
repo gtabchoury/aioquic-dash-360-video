@@ -25,7 +25,7 @@ The command to run the server is:
 
 Example:
 
-`$ python3 server.py -c '../cert/ssl_cert.pem' -k '../cert/ssl_key.pem -q 'SP'`
+`$ python3 server.py -c '../cert/ssl_cert.pem' -k '../cert/ssl_key.pem' -q 'SP'`
 
 ### 2. Running the Client
 The command to run the client is:

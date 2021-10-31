@@ -2,22 +2,20 @@ import argparse
 import asyncio
 import binascii
 import csv
-from src.dash import Dash
 import struct
 import datetime
 import timeit
 import time
 import os
-from urllib.parse import urlparse
 
+from urllib.parse import urlparse
+from dash import Dash
 from aioquic.asyncio import QuicConnectionProtocol
 from aioquic.asyncio.client import connect
 from aioquic.quic.configuration import QuicConfiguration
-
-from src.data_types import VideoPacket, QUICPacket
-from src.utils import message_to_VideoPacket, get_client_file_name, segment_exists
-from src.video_constants import HIGH_PRIORITY, FRAME_TIME_MS, LOW_PRIORITY, VIDEO_FPS, CLIENT_BITRATE, N_SEGMENTS
-
+from data_types import VideoPacket, QUICPacket
+from utils import message_to_VideoPacket, get_client_file_name, segment_exists
+from video_constants import HIGH_PRIORITY, FRAME_TIME_MS, LOW_PRIORITY, VIDEO_FPS, CLIENT_BITRATE, N_SEGMENTS
 
 CLIENT_ID = '1' 
 
@@ -47,10 +45,22 @@ async def handle_stream(reader, writer, dash):
 
     # List all tiles
     tiles_list = list(range(1,201))
-    # Missed frames
-    missed_frames = 0
     # Total frames
     total_frames = 0
+    total_frames_fov = 0
+
+    # Missed frames
+    missed_frames = 0
+    missed_frames_fov = 0
+
+    # Missing ratio
+    missed_frames_seg = {}
+    total_frames_seg = {}
+    missing_ratio = {}
+    missed_frames_seg_fov = {}
+    total_frames_seg_fov = {}
+    missing_ratio_fov = {}
+    
 
     # USER INPUT (currently simulated by CSV)
     with open(User_Input_File) as csv_file:
@@ -65,6 +75,11 @@ async def handle_stream(reader, writer, dash):
             # Frame to make request
             if frame == frame_request:
                 video_segment += 1
+                
+                missed_frames_seg[video_segment] = 0
+                total_frames_seg[video_segment] = 0
+                missed_frames_seg_fov[video_segment] = 0
+                total_frames_seg_fov[video_segment] = 0
 
                 current_bitrate = dash.get_next_bitrate(video_segment)
 
@@ -91,31 +106,70 @@ async def handle_stream(reader, writer, dash):
 
             # CHECK FOR MISSING RATIO
             if frame != 0:
-                # Wait for the actual time of the frame
-                waiting_for_time = True
-                while waiting_for_time:
-                    time_now = datetime.datetime.now()
-                    delta = time_now - frame_time
-
-                    if delta.microseconds > FRAME_TIME_MS:
-                        waiting_for_time = False
-
                 # Check for missing segments
                 index = 0
-                for tile in row:
+                missed_tiles = 0
+                missed_tiles_fov = 0
+                total_tiles = 0
+                total_tiles_fov = 0
+
+                tiles_in_fov = []
+                for t in row:
+                    tile = int(t)
                     if index != 0:
-                        total_frames += 1
-                        if not segment_exists(video_segment, tile, CLIENT_BITRATE):
-                            missed_frames += 1
-                    index += 1
+                        tiles_in_fov.append(tile)
+                    index+=1
+
+                for tile in tiles_list:
+                    total_tiles+=1
+                    in_row = False
+
+                    if (tile in tiles_in_fov):
+                        total_tiles_fov +=1
+                        in_row = True
+
+                    if not segment_exists(video_segment, tile, current_bitrate):
+                        missed_tiles += 1
+                        if (in_row):
+                            missed_tiles_fov +=1
+                
+                missed_frames += missed_tiles
+                total_frames += total_tiles
+                missed_frames_seg[video_segment] = missed_frames_seg[video_segment] + missed_tiles
+                total_frames_seg[video_segment] = total_frames_seg[video_segment] + total_tiles
+
+                missed_frames_fov += missed_tiles_fov
+                total_frames_fov += total_tiles_fov
+                missed_frames_seg_fov[video_segment] = missed_frames_seg_fov[video_segment] + missed_tiles_fov
+                total_frames_seg_fov[video_segment] = total_frames_seg_fov[video_segment] + total_tiles_fov
 
                 # On last segment, print the results and end connection
-                if video_segment == N_SEGMENTS:
-                    percentage = round((missed_frames/total_frames)*100, 2)
-                    print("Total tiles: "+str(total_frames))
-                    print("Missed tiles: "+str(missed_frames))
-                    print("Missing ratio: "+str(percentage)+"%")
-                    print("Total time: "+str(sum(dash.previous_segment_times)))
+                if frame == (N_SEGMENTS*VIDEO_FPS):
+                    i=1
+                    sum_bitrate = 0
+                    download_time_seg = {}
+                    while (i<=N_SEGMENTS):
+                        missing_ratio[i] = str(round((missed_frames_seg[i]/total_frames_seg[i])*100, 2))+"%"
+                        missing_ratio_fov[i] = str(round((missed_frames_seg_fov[i]/total_frames_seg_fov[i])*100, 2))+'%'
+
+                        sum_bitrate += dash.bitrates_seg[i]
+                        download_time_seg[i] = str(round(dash.previous_segment_times_seg[i], 2))+'s'
+
+                        i+=1
+
+                    missing_ratio_total = round((missed_frames/total_frames)*100, 2)
+                    missing_ratio_total_fov = round((missed_frames_fov/total_frames_fov)*100, 2)
+
+                    
+
+                    print("Missing ratio total: "+str(missing_ratio_total)+"%")
+                    print("Missing ratio total (campo visão): "+str(missing_ratio_total_fov)+"%")
+                    print("Missing ratio por segmento: "+str(missing_ratio))
+                    print("Missing ratio por segmento (campo visão): "+str(missing_ratio_fov))
+                    print("Tempo total de download: "+str(round(sum(dash.previous_segment_times), 2))+"s")
+                    print("Tempo total de download por segmento: "+str(download_time_seg))
+                    print("Bitrate médio: "+str(round(sum_bitrate / N_SEGMENTS, 2)))
+                    print("Bitrate por segmento: "+str(dash.bitrates_seg))
                     await send_data(writer, stream_id=CLIENT_ID, end_stream=True)
                     return
 
@@ -127,7 +181,6 @@ async def receive(reader, dash):
         try:
             size, = struct.unpack('<L', await reader.readexactly(4))
         except:
-            print('Finished!')
             break
             
         dash.append_download_size(size)
@@ -139,14 +192,16 @@ async def receive(reader, dash):
         with open(file_name, "wb") as newFile:
             not_finished = True
             while not_finished:
-                file_size, = struct.unpack('<L', await reader.readexactly(4))
-                if file_size == 0:
-                    not_finished = False
-                else:
-                    chunk = await reader.readexactly(file_size)
-                    newFile.write(binascii.hexlify(chunk))
-
-        dash.update_download_time(timeit.default_timer() - start_time)
+                try:
+                    file_size, = struct.unpack('<L', await reader.readexactly(4))
+                    if file_size == 0:
+                        not_finished = False
+                    else:
+                        chunk = await reader.readexactly(file_size)
+                        newFile.write(binascii.hexlify(chunk))
+                except:
+                    break
+        dash.update_download_time(timeit.default_timer() - start_time, int(file_info.segment))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="HTTP/3 client for video streaming")
@@ -192,6 +247,6 @@ if __name__ == "__main__":
 
     dash = Dash([3000, 3500, 4000, 4500, 5000, 5500, 6000], args.dash_algorithm)
 
-    os.system("rm /home/gabriel/git/aioquic-360-video-streaming/data/client_files/*")
+    os.system("rm /Users/gabriel.tabchoury/git/aioquic-dash-360-video/data/client_files/*")
 
     asyncio.get_event_loop().run_until_complete(aioquic_client(ca_cert=args.ca_certs, connection_host=host, connection_port=port, dash=dash))

@@ -12,10 +12,18 @@ class Dash():
         self.segment_download_time = 0
         self.recent_download_sizes = []
         self.previous_segment_times = []
+        self.previous_segment_times_seg = {}
+        self.bitrates_seg = {}
     
-    def update_download_time(self, segment_download_time):
-        self.segment_download_time = segment_download_time
-        self.previous_segment_times.append(segment_download_time)
+    def update_download_time(self, frame_download_time, segment):
+        self.segment_download_time = frame_download_time
+        self.previous_segment_times.append(frame_download_time)
+
+        try:
+            self.previous_segment_times_seg[segment] = self.previous_segment_times_seg[segment] + frame_download_time
+        except:
+            self.previous_segment_times_seg[segment] = 0
+            self.previous_segment_times_seg[segment] = self.previous_segment_times_seg[segment] + frame_download_time
 
     def append_download_size(self, download_size):
         self.recent_download_sizes.append(download_size)
@@ -40,14 +48,13 @@ class Dash():
         try:
             sigma_download = self.average_dwn_time / self.segment_download_time
         except ZeroDivisionError:
-            print("(basic_dash) Next bitrate: "+str(self.current_bitrate))
+            self.bitrates_seg[segment_number] = self.current_bitrate
             self.average_dwn_time = updated_dwn_time
             return self.current_bitrate
 
         try:
             curr = bitrates.index(self.current_bitrate)
         except ValueError:
-            print("(basic_dash) ERRO: Current Bitrate not in the bitrate lsit. Setting to minimum")
             if self.current_bitrate < bitrates[0]:
                 curr = bitrates[0]
             elif self.current_bitrate > bitrates[-1]:
@@ -71,7 +78,7 @@ class Dash():
                     temp_index += 1
                     next_rate = bitrates[temp_index]
         
-        print("(basic_dash) Next bitrate: "+str(next_rate))
+        self.bitrates_seg[segment_number] = next_rate
         self.average_dwn_time = updated_dwn_time
         self.current_bitrate = next_rate
         return next_rate
@@ -80,16 +87,16 @@ class Dash():
     def basic_dash2(self, segment_number):
 
         # Truncating the list of download times and segment 
-        pst = self.previous_segment_times
+        pst = self.previous_segment_times.copy()
         while len(pst) > BASIC_DELTA_COUNT:
             pst.pop(0)
         
-        rds = self.recent_download_sizes
+        rds = self.recent_download_sizes.copy()
         while len(rds) > BASIC_DELTA_COUNT:
             rds.pop(0)
 
         if len(pst) == 0 or len(rds) == 0:
-            print("(basic_dash2) Next bitrate: "+str(self.bitrates[0]))
+            self.bitrates_seg[segment_number] = self.bitrates[0]
             self.average_dwn_time = None
             self.current_bitrate = self.bitrates[0]
             return self.bitrates[0]
@@ -124,7 +131,7 @@ class Dash():
                     next_rate = bitrates[index - 1]
                     break
 
-        print("(basic_dash2) Next bitrate: "+str(next_rate))
+        self.bitrates_seg[segment_number] = next_rate
         self.average_dwn_time = updated_dwn_time
         self.current_bitrate = next_rate
         return next_rate
