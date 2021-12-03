@@ -276,6 +276,6 @@ if __name__ == "__main__":
 
     buffer = Buffer(N_SEGMENTS, VIDEO_FPS)
 
-    os.system("rm /Users/gabriel.tabchoury/git/aioquic-dash-360-video/data/client_files/*")
+    os.system("rm ../data/client_files/*")
 
     asyncio.get_event_loop().run_until_complete(aioquic_client(ca_cert=args.ca_certs, connection_host=host, connection_port=port, dash=dash, buffer=buffer))

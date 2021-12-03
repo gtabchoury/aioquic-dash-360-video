@@ -1,10 +1,10 @@
-# 360º Video Streaming over QUIC
+# 360º Video Streaming over QUIC with MPEG-DASH
 ## Repository setup
 
 ### 1. Start working through `$ git clone`
 Clone the repo with:
-   - With https: `$ git clone https://github.com/gufernandez/aioquic-360-video-streaming`
-   - Or ssh: `$ git clone ssh:git@github.com/gufernandez/aioquic-360-video-streaming`
+   - With https: `$ git clone https://github.com/gtabchoury/aioquic-dash-360-video`
+   - Or ssh: `$ git clone ssh:git@github.com/gtabchoury/aioquic-dash-360-video`
 
 ## Environment setup
 ### 1. Install Python 3 in your favorite distribution (I'm currently using Python 3.6.9)
@@ -30,8 +30,8 @@ Example:
 ### 2. Running the Client
 The command to run the client is:
 
-`$ python3 client.py [-h] [-c PATH/TO/CA_CERTS] -i USER_INPUT_FILE url`
+`$ python3 client.py [-h] [-c PATH/TO/CA_CERTS] -i USER_INPUT_FILE url -da DASH_ALGORITHM`
 
 Example:
 
-`$ python3 client.py -c '../cert/pycacert.pem' -i '../data/user_input.csv' "wss://127.0.0.1:4433"`
+`$ python3 client.py -c '../cert/pycacert.pem' -i '../data/user_input.csv' "wss://127.0.0.1:4433" -da basic2`
