@@ -5,7 +5,7 @@ block_cipher = None
 
 
 a = Analysis(['src/server.py'],
-             pathex=['/home/gabriel/git/aioquic-360-video-streaming'],
+             pathex=[],
              binaries=[],
              datas=[],
              hiddenimports=[],

@@ -16,16 +16,20 @@ from aioquic.quic.configuration import QuicConfiguration
 from data_types import VideoPacket, QUICPacket
 from utils import message_to_VideoPacket, get_client_file_name, segment_exists
 from video_constants import HIGH_PRIORITY, FRAME_TIME_MS, LOW_PRIORITY, VIDEO_FPS, CLIENT_BITRATE, N_SEGMENTS
+from buffer import Buffer
+from multiprocessing import Process
 
 CLIENT_ID = '1' 
 
-async def aioquic_client(ca_cert: str, connection_host: str, connection_port: int, dash: Dash):
+last_segment = 1
+
+async def aioquic_client(ca_cert: str, connection_host: str, connection_port: int, dash: Dash, buffer: Buffer):
     configuration = QuicConfiguration(is_client=True)
     configuration.load_verify_locations(ca_cert)
     async with connect(connection_host, connection_port, configuration=configuration) as client:
         connection_protocol = QuicConnectionProtocol
         reader, writer = await connection_protocol.create_stream(client)
-        await handle_stream(reader, writer, dash)
+        await handle_stream(reader, writer, dash, buffer)
 
 async def send_data(writer, stream_id, end_stream, packet=None):
     data = QUICPacket(stream_id, end_stream, packet).serialize()
@@ -35,10 +39,14 @@ async def send_data(writer, stream_id, end_stream, packet=None):
 
     await asyncio.sleep(0.0001)
 
-async def handle_stream(reader, writer, dash):
+async def handle_stream(reader, writer, dash, buffer: Buffer):
     
     # User input
-    asyncio.ensure_future(receive(reader, dash))
+    asyncio.ensure_future(receive(reader, dash, buffer))
+
+    # Buffer
+    #Process(target = buffer.start).start()
+    
     # Server data received
     writer.write(CLIENT_ID.encode())
     await asyncio.sleep(0.0001)
@@ -106,6 +114,15 @@ async def handle_stream(reader, writer, dash):
 
             # CHECK FOR MISSING RATIO
             if frame != 0:
+                # Wait for the actual time of the frame
+                waiting_for_time = True
+                while waiting_for_time:
+                    time_now = datetime.datetime.now()
+                    delta = time_now - frame_time
+
+                    if delta.microseconds > FRAME_TIME_MS:
+                        waiting_for_time = False
+                        
                 # Check for missing segments
                 index = 0
                 missed_tiles = 0
@@ -144,7 +161,7 @@ async def handle_stream(reader, writer, dash):
                 total_frames_seg_fov[video_segment] = total_frames_seg_fov[video_segment] + total_tiles_fov
 
                 # On last segment, print the results and end connection
-                if frame == (N_SEGMENTS*VIDEO_FPS):
+                if frame == (N_SEGMENTS*VIDEO_FPS)+1:
                     i=1
                     sum_bitrate = 0
                     download_time_seg = {}
@@ -160,7 +177,7 @@ async def handle_stream(reader, writer, dash):
                     missing_ratio_total = round((missed_frames/total_frames)*100, 2)
                     missing_ratio_total_fov = round((missed_frames_fov/total_frames_fov)*100, 2)
 
-                    
+                    buffer.finish()
 
                     print("Missing ratio total: "+str(missing_ratio_total)+"%")
                     print("Missing ratio total (campo visão): "+str(missing_ratio_total_fov)+"%")
@@ -175,18 +192,23 @@ async def handle_stream(reader, writer, dash):
 
             frame += 1
 
-async def receive(reader, dash):
+async def receive(reader, dash, buffer):
+    global last_segment
     while True:
         start_time = timeit.default_timer()
         try:
             size, = struct.unpack('<L', await reader.readexactly(4))
         except:
+            finished = True
             break
             
         dash.append_download_size(size)
 
         file_name_data = await reader.readexactly(size)
         file_info = message_to_VideoPacket(eval(file_name_data.decode()))
+
+        if (int(file_info.segment)!=last_segment):
+            buffer.write()
 
         file_name = get_client_file_name(segment=file_info.segment, tile=file_info.tile, bitrate=file_info.bitrate)
         with open(file_name, "wb") as newFile:
@@ -201,6 +223,11 @@ async def receive(reader, dash):
                         newFile.write(binascii.hexlify(chunk))
                 except:
                     break
+        
+        
+
+        last_segment = file_info.segment
+
         dash.update_download_time(timeit.default_timer() - start_time, int(file_info.segment))
 
 if __name__ == "__main__":
@@ -245,8 +272,10 @@ if __name__ == "__main__":
     else:
         port = 4433
 
-    dash = Dash([3000, 3500, 4000, 4500, 5000, 5500, 6000], args.dash_algorithm)
+    dash = Dash([1, 2, 5], args.dash_algorithm)
+
+    buffer = Buffer(N_SEGMENTS, VIDEO_FPS)
 
     os.system("rm /Users/gabriel.tabchoury/git/aioquic-dash-360-video/data/client_files/*")
 
-    asyncio.get_event_loop().run_until_complete(aioquic_client(ca_cert=args.ca_certs, connection_host=host, connection_port=port, dash=dash))
+    asyncio.get_event_loop().run_until_complete(aioquic_client(ca_cert=args.ca_certs, connection_host=host, connection_port=port, dash=dash, buffer=buffer))

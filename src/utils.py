@@ -14,10 +14,10 @@ def message_to_VideoPacket(data):
     return VideoPacket(segment=data[0], tile=data[1], priority=data[2], bitrate=data[3])
 
 def get_server_file_name(segment, tile, bitrate):
-    return SERVER_FILE_LOCATION + FILE_BASE_NAME + FILE_END_NAME + str(tile).strip() + '_' + str(segment).strip() + FILE_FORMAT
+    return SERVER_FILE_LOCATION + FILE_BASE_NAME + str(int(bitrate)).strip() + FILE_END_NAME + str(tile).strip() + '_' + str(segment).strip() + FILE_FORMAT
 
 def get_client_file_name(segment, tile, bitrate):
-    return CLIENT_FILE_LOCATION + FILE_BASE_NAME + FILE_END_NAME + str(tile).strip() + '_' + str(segment).strip() + FILE_FORMAT
+    return CLIENT_FILE_LOCATION + FILE_BASE_NAME + str(int(bitrate)).strip() + FILE_END_NAME + str(tile).strip() + '_' + str(segment).strip() + FILE_FORMAT
 
 def segment_exists(segment, tile, bitrate):
     return os.path.isfile(get_client_file_name(segment, tile, bitrate))
