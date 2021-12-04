@@ -6,10 +6,10 @@ from asyncio import Queue
 
 from aioquic.asyncio import serve
 from aioquic.quic.configuration import QuicConfiguration
-from queues import StrictPriorityQueue, WeightedFairQueue
-from data_types import VideoRequestMessage, VideoPacket
-from utils import message_to_QUICPacket, get_server_file_name
-from video_constants import CLOSE_REQUEST, TILE_REQUEST, LOW_PRIORITY, PUSH_REQUEST, WFQ_QUEUE, SP_QUEUE, N_SEGMENTS
+from src.queues import StrictPriorityQueue, WeightedFairQueue
+from src.data_types import VideoRequestMessage, VideoPacket
+from src.utils import message_to_QUICPacket, get_server_file_name
+from src.video_constants import CLOSE_REQUEST, TILE_REQUEST, LOW_PRIORITY, PUSH_REQUEST, WFQ_QUEUE, SP_QUEUE, N_SEGMENTS
 
 
 def handle_stream(reader, writer):

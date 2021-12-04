@@ -9,14 +9,14 @@ import time
 import os
 
 from urllib.parse import urlparse
-from dash import Dash
+from src.dash import Dash
 from aioquic.asyncio import QuicConnectionProtocol
 from aioquic.asyncio.client import connect
 from aioquic.quic.configuration import QuicConfiguration
-from data_types import VideoPacket, QUICPacket
-from utils import message_to_VideoPacket, get_client_file_name, segment_exists
-from video_constants import HIGH_PRIORITY, FRAME_TIME_MS, LOW_PRIORITY, VIDEO_FPS, CLIENT_BITRATE, N_SEGMENTS
-from buffer import Buffer
+from src.data_types import VideoPacket, QUICPacket
+from src.utils import message_to_VideoPacket, get_client_file_name, segment_exists
+from src.video_constants import HIGH_PRIORITY, FRAME_TIME_MS, LOW_PRIORITY, VIDEO_FPS, CLIENT_BITRATE, N_SEGMENTS
+from src.buffer import Buffer
 from multiprocessing import Process
 
 CLIENT_ID = '1' 
@@ -24,7 +24,7 @@ CLIENT_ID = '1'
 last_segment = 1
 
 async def aioquic_client(ca_cert: str, connection_host: str, connection_port: int, dash: Dash, buffer: Buffer):
-    configuration = QuicConfiguration(is_client=True)
+    configuration = QuicConfiguration(is_client=True, idle_timeout=5)
     configuration.load_verify_locations(ca_cert)
     async with connect(connection_host, connection_port, configuration=configuration) as client:
         connection_protocol = QuicConnectionProtocol
@@ -40,7 +40,6 @@ async def send_data(writer, stream_id, end_stream, packet=None):
     await asyncio.sleep(0.0001)
 
 async def handle_stream(reader, writer, dash, buffer: Buffer):
-    
     # User input
     asyncio.ensure_future(receive(reader, dash, buffer))
 
@@ -170,7 +169,10 @@ async def handle_stream(reader, writer, dash, buffer: Buffer):
                         missing_ratio_fov[i] = str(round((missed_frames_seg_fov[i]/total_frames_seg_fov[i])*100, 2))+'%'
 
                         sum_bitrate += dash.bitrates_seg[i]
-                        download_time_seg[i] = str(round(dash.previous_segment_times_seg[i], 2))+'s'
+                        try:
+                            download_time_seg[i] = str(round(dash.previous_segment_times_seg[i], 2))+'s'
+                        except:
+                            download_time_seg[i] = 'NOT_FINISHED'
 
                         i+=1
 
@@ -223,17 +225,18 @@ async def receive(reader, dash, buffer):
                         newFile.write(binascii.hexlify(chunk))
                 except:
                     break
-        
-        
+    
 
         last_segment = file_info.segment
 
         dash.update_download_time(timeit.default_timer() - start_time, int(file_info.segment))
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="HTTP/3 client for video streaming")
     parser.add_argument(
-        "url",
+        "-u",
+        "--url",
         type=str,
         help="the URL to query (must be HTTPS)"
     )
@@ -264,7 +267,7 @@ if __name__ == "__main__":
     global User_Input_File
     User_Input_File = args.user_input
 
-    parsed = urlparse(args.url[0])
+    parsed = urlparse(args.url)
     host = parsed.hostname
 
     if parsed.port is not None:
@@ -276,6 +279,6 @@ if __name__ == "__main__":
 
     buffer = Buffer(N_SEGMENTS, VIDEO_FPS)
 
-    os.system("rm ../data/client_files/*")
+    os.system("rm data/client_files/*")
 
     asyncio.get_event_loop().run_until_complete(aioquic_client(ca_cert=args.ca_certs, connection_host=host, connection_port=port, dash=dash, buffer=buffer))
